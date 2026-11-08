@@ -1,7 +1,6 @@
 import math
 import os
 import time
-import fluidsynth
 import urllib.request
 from collections import deque
 
@@ -10,12 +9,7 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 
-
-# music
-fs = fluidsynth.Synth()
-fs.start(driver="pulseaudio")   # if this fails, try "alsa"
-sfid = fs.sfload("/usr/share/sounds/sf2/FluidR3_GM.sf2")
-fs.program_select(0, sfid, 0, 48)
+from music import MusicElement
 
 
 MODEL_URL = (
@@ -47,8 +41,7 @@ FINGER_JOINTS = {
 # ---------------------------------------------------------------------------
 
 def dist(a, b):
-    return math.hypot(a[0] - b[0], a[1] - b[1])
-
+    return math.hypot(a[0] - b[0], a[1] - b[1]) 
 
 def finger_states(pts):
     """Return {finger_name: True if extended}. pts is a list of 21 (x, y) pixel points."""
@@ -67,60 +60,68 @@ def finger_states(pts):
     states["thumb"] = dist(pts[4], pts[17]) > dist(pts[3], pts[17])
     return states
 
-
-def classify(pts):
-    """Return (gesture_name, number_of_extended_fingers)."""
-    s = finger_states(pts)
-    count = sum(s.values())
-
+def pinching(pts, fingertip_1, fingertip_2):
+    """
+    Return True if two fingers pinching.
+    
+    Args:
+        fingertip_1 (int): number corresponding to a given fingertip
+        fingertip_2 (int): number corresponding to a given fingertip
+    """
     # Hand size (wrist to middle-finger base) lets us measure distances
     # relative to the hand, so results don't change as you move closer/farther.
     hand_size = dist(pts[0], pts[9])
-    pinching = dist(pts[4], pts[8]) / hand_size < 0.25
+    pinching = dist(pts[fingertip_1], pts[fingertip_2]) / hand_size < 0.25
 
+    return pinching
+
+
+def classify(pts, side):
+    """Return (gesture_name, number_of_extended_fingers)."""
+    s = finger_states(pts)
+    count = sum(s.values())
     four_up = [s["index"], s["middle"], s["ring"], s["pinky"]]
 
-    if pinching and s["middle"] and s["ring"] and s["pinky"]:
-        return "OK", count
-
-    if count == 5:
-        return "Open palm", count
-
-    if not any(four_up):
-        if not s["thumb"]:
-            return "Fist", count
-        # Only the thumb is out: up, down, or sideways?
-        if pts[4][1] < pts[0][1] - 0.5 * hand_size:   # image y grows downward
-            return "Thumbs up", count
-        if pts[4][1] > pts[0][1] + 0.5 * hand_size:
-            return "Thumbs down", count
-        return "Thumb out", count
-
-    if s["index"] and not any([s["middle"], s["ring"], s["pinky"]]) and not s["thumb"]:
-        return "Pointing", count
-
-    if s["index"] and s["middle"] and not s["ring"] and not s["pinky"] and not s["thumb"]:
-        return "Peace", count
-
-    return f"{count} fingers", count
-
-class MusicElement:
-    """one sound to play"""
-
-    def __init__(self):
-        self.pitch = 60; # middle c
-
-    def play(self, gesture):
-        # play the sound
-
-        if gesture == "Pointing":
-            fs.noteon(0, self.pitch, 100)
+    if side == "Right": 
+        if s["index"] and not any([s["thumb"], s["middle"], s["ring"], s["pinky"]]):
+            return "Pointing", count
+        elif all([s["index"], s["middle"]]) and not any([s["thumb"], s["ring"], s["pinky"]]):
+            return "interval_2", count
+        elif all([s["thumb"], s["index"], s["middle"]]) and not any([s["ring"], s["pinky"]]):
+            return "interval_3", count
+        elif all([s["index"], s["middle"], s["ring"], s["pinky"]]) and not s["thumb"]:
+            return "interval_4", count
+        elif count == 5:
+            return "interval_5", count
+        elif pinching(pts,4,20) and all([s["index"], s["middle"], s["ring"]]):
+            return "interval_6", count
+        elif pinching(pts,4,16) and all([s["index"], s["middle"], s["pinky"]]):
+            return "interval_7", count
+        elif pinching(pts,4,12) and all([s["index"], s["ring"], s["pinky"]]):
+            return "interval_8", count
+        elif pinching(pts,4,8) and all([s["middle"], s["ring"], s["pinky"]]):
+            return "OK", count
         else:
-            fs.noteoff(0, self.pitch)
+            return f"{count} fingers", count
+    elif side == "Left":
+        if count == 5:
+            return "major", count
+        elif count == 0: 
+            return "minor", count
+        else:
+            return f"{count} fingers", count
+    # if count == 5:
+    #     return "Open palm", count
 
-    def stop(self):
-        # stop current sound
-        fs.noeoff(0, self.pitch)
+    # if not any(four_up):
+    #     if not s["thumb"]:
+    #         return "Fist", count
+    #     # Only the thumb is out: up, down, or sideways?
+    #     if pts[4][1] < pts[0][1] - 0.5 * hand_size:   # image y grows downward
+    #         return "Thumbs up", count
+    #     if pts[4][1] > pts[0][1] + 0.5 * hand_size:
+    #         return "Thumbs down", count
+    #     return "Thumb out", count
 
 class ChordHandling:
     def ChordGestures():
@@ -229,7 +230,7 @@ def main():
                 print("Camera frame not available")
                 break
 
-            frame = cv.flip(frame, 1)
+            # frame = cv.flip(frame, 1)
             h, w = frame.shape[:2]
 
             rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
@@ -240,6 +241,11 @@ def main():
             seen = set()
             total_fingers = 0
 
+            if not result.hand_landmarks:
+                player.stop()
+                smoother.stable.clear()
+
+
             for landmarks, handedness in zip(result.hand_landmarks, result.handedness):
                 side = handedness[0].category_name          # "Left" or "Right"
                 seen.add(side)
@@ -248,7 +254,7 @@ def main():
                 # skewed by the frame's aspect ratio.
                 pts = [(lm.x * w, lm.y * h) for lm in landmarks]
 
-                gesture, count = classify(pts)
+                gesture, count = classify(pts, side)
                 total_fingers += count
                 stable_gesture = smoother.update(side, gesture)
 
