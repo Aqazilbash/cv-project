@@ -11,6 +11,11 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 
+quality_manager = pychord.QualityManager()
+quality_manager.set_quality("dimM7", ("1", "b3", "b5", "7"))
+quality_manager.set_quality("M7sus4", ("1", "4", "5", "7"))
+quality_manager.set_quality("M7sus2", ("1", "2", "5", "7"))
+quality_manager.set_quality("7sus2", ("1", "2", "5", "b7"))
 
 # music
 fs = fluidsynth.Synth()
@@ -115,23 +120,6 @@ def classify(pts):
 
     return f"{count} fingers", count
 
-class MusicElement:
-    """one sound to play"""
-
-    def __init__(self):
-        self.pitch = 60; # middle c
-
-    def play(self, gesture):
-        # play the sound
-
-        if gesture == "Pointing":
-            fs.noteon(0, self.pitch, 100)
-        else:
-            fs.noteoff(0, self.pitch)
-
-    def stop(self):
-        # stop current sound
-        fs.noeoff(0, self.pitch)
 
 class ChordHandler:
 
@@ -201,7 +189,7 @@ class ChordHandler:
                 elif self.baseQuality == "m":
                     self.qualityChosen = "mM7"
                 elif self.baseQuality == "dim":
-                    self.qualityChosen = "" #TODO quality manager dim maj7
+                    self.qualityChosen = "dimM7"
             elif not s["index"] and not s["middle"] and s["ring"] and s["pinky"] and not s["thumb"]: #rp
                 if self.baseQuality == "M":
                     self.qualityChosen = "7"
@@ -210,20 +198,20 @@ class ChordHandler:
                 elif self.baseQuality == "dim":
                     self.qualityChosen = "dim7"
             elif s["index"] and not s["middle"] and not s["ring"] and s["pinky"] and not s["thumb"]: #ip
-                self.qualityChosen = "" #TODO quality manager M7sus4
+                self.qualityChosen = "M7sus4"
             elif not s["index"] and s["middle"] and not s["ring"] and s["pinky"] and not s["thumb"]: #mp
-                self.qualityChosen = "" #TODO quality manager M7sus2
+                self.qualityChosen = "M7sus2"
             elif s["index"] and s["middle"] and not s["ring"] and s["pinky"] and not s["thumb"]: #imp
                 if self.baseQuality == "M":
                     self.qualityChosen = "mM7"
                 elif self.baseQuality == "m":
                     self.qualityChosen = "maj7"
                 elif self.baseQuality == "dim":
-                    self.qualityChosen = "" #TODO quality manager dim maj7
+                    self.qualityChosen = "dimM7"
             elif s["index"] and not s["middle"] and s["ring"] and s["pinky"] and not s["thumb"]: #irp
                 self.qualityChosen = "7sus4"
             elif not s["index"] and s["middle"] and s["ring"] and s["pinky"] and not s["thumb"]: #mrp
-                self.qualityChosen = "" #TODO quality manager 7sus2
+                self.qualityChosen = "7sus2"
             elif s["index"] and s["middle"] and s["ring"] and s["pinky"] and not s["thumb"]: #imrp
                 if self.baseQuality == "M":
                     self.qualityChosen = "m7"
@@ -233,6 +221,7 @@ class ChordHandler:
                     self.qualityChosen = "dim7"
             else:
                 self.qualityChosen = ""
+            
 
         #print(self.qualityChosen)
         return (self.noteChosen, self.qualityChosen)
