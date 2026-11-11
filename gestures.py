@@ -1,31 +1,9 @@
+"""Gesture logic to determine extension of fingers for future 
+classification and to smooth gestures between frames."""
+
 import math
-import os
-import time
-import urllib.request
-from collections import deque
-
-import cv2 as cv
-import mediapipe as mp
-from mediapipe.tasks import python as mp_python
-from mediapipe.tasks.python import vision
-
-from music import MusicElement
 
 
-MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
-    "hand_landmarker/float16/1/hand_landmarker.task"
-)
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hand_landmarker.task")
-
-HAND_CONNECTIONS = [
-    (0, 1), (1, 2), (2, 3), (3, 4),
-    (0, 5), (5, 6), (6, 7), (7, 8),
-    (5, 9), (9, 10), (10, 11), (11, 12),
-    (9, 13), (13, 14), (14, 15), (15, 16),
-    (13, 17), (17, 18), (18, 19), (19, 20),
-    (0, 17),
-]
 
 # (tip index, middle-joint index) for each non-thumb finger.
 FINGER_JOINTS = {
@@ -35,16 +13,49 @@ FINGER_JOINTS = {
     "pinky": (20, 18),
 }
 
+FINGER_ORDER = ("index", "middle", "ring", "pinky", "thumb")
 
-# ---------------------------------------------------------------------------
-# Gesture logic
-# ---------------------------------------------------------------------------
+FIST = (0,0,0,0,0)
 
 def dist(a, b):
-    return math.hypot(a[0] - b[0], a[1] - b[1]) 
+    """Determine distance between two points.
+    
+    Args:
+        a (tuple): x and y coordinates of first finger joint
+        b (tuple): x and y coordinates finger joint
+    
+    Return:
+        float: distance in pixels
+    """
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+def finger_key(pts):
+    """Create key defining whether or not a finger is extended for 
+    all five fingers.
+    
+    Arg:
+        pts (list): 21 (x,y) pixel coordinates for each finger joint
+    
+    Return: 
+        tuple: 5 elements of 0s and 1s for each finger
+    """
+    s = finger_states(pts)
+    return tuple(int(s[f]) for f in FINGER_ORDER)
 
 def finger_states(pts):
-    """Return {finger_name: True if extended}. pts is a list of 21 (x, y) pixel points."""
+    """Determine if finger extended. 
+    
+    If the distance between the fingertip and wrist are shorter than the 
+    middle joint and wrist, the finger is not extended. For the thumb, 
+    compare the fingertip and the base joint of the pinky.
+
+    Arg: 
+        pts (list): 21 (x,y) pixel coordinates for each finger joint
+
+    Return: 
+        states (dict): 5 elements with finger name as the key and a boolean 
+        for extension as the value.
+    """
     wrist = pts[0]
     states = {}
 
@@ -60,220 +71,39 @@ def finger_states(pts):
     states["thumb"] = dist(pts[4], pts[17]) > dist(pts[3], pts[17])
     return states
 
-def pinching(pts, fingertip_1, fingertip_2):
-    """
-    Return True if two fingers pinching.
-    
-    Args:
-        fingertip_1 (int): number corresponding to a given fingertip
-        fingertip_2 (int): number corresponding to a given fingertip
-    """
-    # Hand size (wrist to middle-finger base) lets us measure distances
-    # relative to the hand, so results don't change as you move closer/farther.
-    hand_size = dist(pts[0], pts[9])
-    pinching = dist(pts[fingertip_1], pts[fingertip_2]) / hand_size < 0.25
 
-    return pinching
+class StableValue():
+    """Switch finger tuple to a new value only after it's been seen several
+    times in a row."""
+    def __init__(self, confirm=2):
+        """Initialize the smoother.
+        
+        Arg:
+            confirm (int): consecutive frames needed to accept a change."""
+        self.confirm = confirm
+        self.value = None
+        self.pending = None
+        self.count = 0
 
+    def update(self, v): 
+        """Feed the newest raw value and return a stable one.
+        
+        Arg:
+            v (tuple): five 0 and 1 values for the raw finger key of
+            a given frame
 
-def classify(pts, side):
-    """Return (gesture_name, number_of_extended_fingers)."""
-    s = finger_states(pts)
-    count = sum(s.values())
-    four_up = [s["index"], s["middle"], s["ring"], s["pinky"]]
-
-    if side == "Right": 
-        if s["index"] and not any([s["thumb"], s["middle"], s["ring"], s["pinky"]]):
-            return "Pointing", count
-        elif all([s["index"], s["middle"]]) and not any([s["thumb"], s["ring"], s["pinky"]]):
-            return "interval_2", count
-        elif all([s["thumb"], s["index"], s["middle"]]) and not any([s["ring"], s["pinky"]]):
-            return "interval_3", count
-        elif all([s["index"], s["middle"], s["ring"], s["pinky"]]) and not s["thumb"]:
-            return "interval_4", count
-        elif count == 5:
-            return "interval_5", count
-        elif pinching(pts,4,20) and all([s["index"], s["middle"], s["ring"]]):
-            return "interval_6", count
-        elif pinching(pts,4,16) and all([s["index"], s["middle"], s["pinky"]]):
-            return "interval_7", count
-        elif pinching(pts,4,12) and all([s["index"], s["ring"], s["pinky"]]):
-            return "interval_8", count
-        elif pinching(pts,4,8) and all([s["middle"], s["ring"], s["pinky"]]):
-            return "OK", count
-        else:
-            return f"{count} fingers", count
-    elif side == "Left":
-        if count == 5:
-            return "major", count
-        elif count == 0: 
-            return "minor", count
-        else:
-            return f"{count} fingers", count
-    # if count == 5:
-    #     return "Open palm", count
-
-    # if not any(four_up):
-    #     if not s["thumb"]:
-    #         return "Fist", count
-    #     # Only the thumb is out: up, down, or sideways?
-    #     if pts[4][1] < pts[0][1] - 0.5 * hand_size:   # image y grows downward
-    #         return "Thumbs up", count
-    #     if pts[4][1] > pts[0][1] + 0.5 * hand_size:
-    #         return "Thumbs down", count
-    #     return "Thumb out", count
-
-class ChordHandling:
-    def ChordGestures():
-        """Left hand: change key and choose chord based on scale degree. 
-        Right hand: modify third of chord, add 7, b7, or 9."""
-        #TODO figure out left vs right hand denote
-        if s["index"] and not any([s["middle"], s["ring"], s["pinky"]]) and not s["thumb"]:
-           return "SD1" #same as pointing
-        if s["index"] and s["middle"] and not s["ring"] and not s["pinky"] and not s["thumb"]:
-           return "SD2"
-        if s["index"] and s["middle"] and s["ring"] and not s["pinky"] and not s["thumb"]:
-            return "SD3"
-        if s["index"] and s["middle"] and s["ring"] and s["pinky"] and not s["thumb"]:
-            return "SD4" #same as four up
-        if s["index"] and s["middle"] and s["ring"] and s["pinky"] and s["thumb"]:
-            return "SD5" #same as open palm
-        if not any(s["index"], s["middle"], s["ring"], s["pinky"]) and s["thumb"]:
-            return "SD6"
-        if s["index"] and not s["middle"] and not s["ring"] and not s["pinky"] and s["thumb"]:
-           return "SD7"
-
-    def ChordChanger():
-        noteChosen = None
-        scaleChosen = "Cmaj"
-        qualityChosen = ""
-        Chord.from_note_index(note=noteChosen, quality=qualityChosen, scale=key)
-
-
-
-class GestureSmoother:
-    """Only report a gesture once it has been the same for N frames in a row."""
-
-    def __init__(self, frames=5):
-        self.frames = frames
-        self.history = {}
-        self.stable = {}
-
-    def update(self, key, gesture):
-        h = self.history.setdefault(key, deque(maxlen=self.frames))
-        h.append(gesture)
-        if len(h) == self.frames and len(set(h)) == 1:
-            if self.stable.get(key) != gesture:
-                print(f"{key} hand: {gesture}")   # <-- hook point for real actions
-            self.stable[key] = gesture
-        return self.stable.get(key, "...")
-
-    def forget_missing(self, seen_keys):
-        for key in list(self.history):
-            if key not in seen_keys:
-                del self.history[key]
-                self.stable.pop(key, None)
-
-
-# Setup and drawing
-
-def ensure_model():
-    if not os.path.exists(MODEL_PATH):
-        print("Downloading hand landmarker model (one time)...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-
-
-def draw_hand(frame, pts, label, gesture):
-    int_pts = [(int(x), int(y)) for x, y in pts]
-    for start, end in HAND_CONNECTIONS:
-        cv.line(frame, int_pts[start], int_pts[end], (255, 255, 255), 2)
-
-    color = (255, 255, 255)
-    if gesture == "Thumbs up":
-        color = (0, 200, 0)
-    elif gesture == "Thumbs down":
-        color = (0, 0, 200)
-    elif gesture == "Pointing":
-        color = (200, 0, 0)
-
-    for p in int_pts:
-        cv.circle(frame, p, 4, color, -1)
-    cv.putText(frame, label, (int_pts[0][0], int_pts[0][1] + 25),
-               cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
-
-
-def main():
-    ensure_model()
-
-    options = vision.HandLandmarkerOptions(
-        base_options=mp_python.BaseOptions(model_asset_path=MODEL_PATH),
-        running_mode=vision.RunningMode.VIDEO,
-        num_hands=2,
-        min_hand_detection_confidence=0.5,
-        min_hand_presence_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
-
-    cam = cv.VideoCapture(0)
-    if not cam.isOpened():
-        print("Could not open camera")
-        return
-
-    player = MusicElement()
-    smoother = GestureSmoother(frames=5)
-    start_time = time.monotonic()
-
-    with vision.HandLandmarker.create_from_options(options) as landmarker:
-        while cam.isOpened():
-            success, frame = cam.read()
-            if not success:
-                print("Camera frame not available")
-                break
-
-            # frame = cv.flip(frame, 1)
-            h, w = frame.shape[:2]
-
-            rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            timestamp_ms = int((time.monotonic() - start_time) * 1000)
-            result = landmarker.detect_for_video(mp_image, timestamp_ms)
-
-            seen = set()
-            total_fingers = 0
-
-            if not result.hand_landmarks:
-                player.stop()
-                smoother.stable.clear()
-
-
-            for landmarks, handedness in zip(result.hand_landmarks, result.handedness):
-                side = handedness[0].category_name          # "Left" or "Right"
-                seen.add(side)
-
-                # Convert normalized coords to pixels so distances are not
-                # skewed by the frame's aspect ratio.
-                pts = [(lm.x * w, lm.y * h) for lm in landmarks]
-
-                gesture, count = classify(pts, side)
-                total_fingers += count
-                stable_gesture = smoother.update(side, gesture)
-
-                draw_hand(frame, pts, f"{side}: {stable_gesture}", stable_gesture)
-                player.play(stable_gesture)
-
-            smoother.forget_missing(seen)
-
-            cv.putText(frame, f"Fingers up (all hands): {total_fingers}", (10, 30),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
-            cv.imshow("Gestures", frame)
-
-            if cv.waitKey(1) & 0xFF == ord("q"):
-                break
-
-    player.stop()
-    cam.release()
-    cv.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    main()
+        Return:
+            tuple or None: the confirmed finger key or None if no
+            value has been confirmed yet
+        """
+        if v == self.value:
+            self.pending, self.count = None, 0
+        elif v == self.pending: 
+            self.count += 1
+            if self.count >= self.confirm:
+                self.value, self.pending, self.count = v, None, 0
+        else: 
+            self.pending, self.count = v, 1
+            if self.confirm <= 1:
+                self.value, self.pending, self.count = v, None, 0
+        return self.value
