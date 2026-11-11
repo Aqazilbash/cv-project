@@ -1,3 +1,5 @@
+"""Gesture-controlled synthesizer with live looper. Press 'q' to quit window."""
+
 import time
 import cv2 as cv
 import mediapipe as mp
