@@ -10,8 +10,17 @@ The program is split into modules that each handle one stage, and `main.py` conn
 
 ## Demo
 
-- Tutorial for basic functions of Hand Synthesizer: [Video 1]([VIDEO_1_URL](https://github.com/Aqazilbash/cv-project/blob/main/media/hand_synthesizer_demo.mp4))
-- Hot Cross Buns on Hand Synthesizer: [Video 2]([VIDEO_2_URL](https://github.com/Aqazilbash/cv-project/blob/main/media/hotcrossbuns.mp4))
+**Tutorial for basic functions of Hand Synthesizer**
+
+[![Tutorial for basic functions of Hand Synthesizer](https://img.youtube.com/vi/w4X1slxahTQ/0.jpg)](https://youtu.be/w4X1slxahTQ)
+
+*[Watch on YouTube](https://youtu.be/w4X1slxahTQ)*
+
+**Hot Cross Buns on Hand Synthesizer**
+
+[![Hot Cross Buns on Hand Synthesizer](https://img.youtube.com/vi/SwFPhwH4CE4/0.jpg)](https://youtu.be/SwFPhwH4CE4)
+
+*[Watch on YouTube](https://youtu.be/SwFPhwH4CE4)*
 
 ## Gesture Recognition
 
