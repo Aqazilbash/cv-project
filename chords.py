@@ -76,6 +76,16 @@ class ChordHandler:
         current scale degree."""
         return self.triad_quality[self.note]
 
+    def next_scale(self):
+        SCALES = ["Cmaj", "Dbmaj", "Dmaj", "Ebmaj", "Emaj", "Fmaj",
+          "F#maj", "Gmaj", "Abmaj", "Amaj", "Bbmaj", "Bmaj"]
+        try:
+            i = SCALES.index(self.scale)
+        except ValueError:
+            i = -1                      # unknown scale: start over at Cmaj
+        self.scale = SCALES[(i + 1) % len(SCALES)]
+        return self.scale
+
     def set_degree(self, key):
         """Looks up left hand pose in scale_degree and updates degree
         that pose is mapped to. Unmapped poses are ignored.

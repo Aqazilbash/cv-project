@@ -121,9 +121,13 @@ def main():
                         cv.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
                 # open window 
                 cv.imshow("Hand Synthesizer", frame)
-                # exit program if "q"
-                if cv.waitKey(1) & 0xFF == ord("q"):
+                # keyboard controls: "q" quits, "k" moves to the next scale
+                key_press = cv.waitKey(1) & 0xFF
+                if key_press == ord("q"):
                     break
+                elif key_press == ord("k"):
+                    new_scale = handler.next_scale()
+                    print(f"Scale changed --> {new_scale}")
 
     finally: 
         player.stop()
