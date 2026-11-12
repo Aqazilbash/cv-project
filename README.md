@@ -9,6 +9,7 @@ To create this program, we used four existing python frameworks: OpenCV, Mediapi
 The program is split into modules that each handle one stage, and `main.py` connects them in a loop that runs on every webcam frame. A frame is read by OpenCV, `visuals.py` finds the hand landmarks with MediaPipe, `gestures.py` reduces them to finger patterns, `chords.py` turns those into chord notes, and `audio.py` plays them through FluidSynth. `looper.py` can record and replay the chords.
 
 ## Demo
+All functions of the algorithm may not be included since the demo videos were made in parallel to development of the project.
 
 **Tutorial for basic functions of Hand Synthesizer**
 
