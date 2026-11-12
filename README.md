@@ -103,7 +103,10 @@ I implemented gesture smoothing, the loop controller, and interval playing (whic
 
 ## AI Usage
 
-AI was used for debugging purposes to diagnose errors and give hints to fixing unexpected behavior in the code. It was also used to set up the framework for MediaPipe's hand tracking algorithm and to organize our code.
+We used Claude to set up the framework for MediaPipe’s hand tracking system, as well as the basic functions for Pychord and Fluidsynth interaction. It was also used to optimize and clean up the code after the program was complete.
+
+We approached AI as a learning tool, and analyzed each piece of code written before implementing it, to ensure we had complete understanding of the code’s purpose. 
+
 
 ## Setup
 
