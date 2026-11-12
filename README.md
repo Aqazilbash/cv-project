@@ -95,7 +95,7 @@ I created our gesture recognition program, the fluidsynth code for playing notes
 
 ### Maddy
 
-
+I designed the chord selection system and implemented it with the chord changer function.
 
 ### Irene
 
